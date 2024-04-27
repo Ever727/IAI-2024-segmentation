@@ -12,6 +12,15 @@ from models import CONFIG, RNN_LSTM, RNN_GRU, TextCNN, MLP, Transformer, Bert
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {DEVICE}")
 
+model_classes = {
+    "RNN_LSTM": RNN_LSTM,
+    "RNN_GRU": RNN_GRU,
+    "TextCNN": TextCNN,
+    "MLP": MLP,
+    "Transformer": Transformer,
+    "Bert": Bert,
+}
+
 
 class TextClassifier:
     def __init__(self, config, model_type, learning_rate, batch_size, max_length):
@@ -21,21 +30,11 @@ class TextClassifier:
         self.batch_size = batch_size
         self.max_length = max_length
 
-        if self.model_type == "RNN_LSTM":
-            self.model = RNN_LSTM(self.config).to(DEVICE)
-        elif self.model_type == "RNN_GRU":
-            self.model = RNN_GRU(self.config).to(DEVICE)
-        elif self.model_type == "TextCNN":
-            self.model = TextCNN(self.config).to(DEVICE)
-        elif self.model_type == "MLP":
-            self.model = MLP(self.config).to(DEVICE)
-        elif self.model_type == "Transformer":
-            self.model = Transformer(self.config).to(DEVICE)
-        elif self.model_type == "Bert":
-            self.model = Bert(self.config).to(DEVICE)
+        if self.model_type in model_classes:
+            self.model = model_classes[self.model_type](self.config).to(DEVICE)
         else:
             raise ValueError(
-                "Invalid model type. Choose from: RNN_LSTM, RNN_GRU, TextCNN, MLP, Transformer, Bert"
+                f"Invalid model type: {self.model_type}. Choose from: {', '.join(model_classes.keys())}"
             )
 
         self.optimizer = torch.optim.Adam(
@@ -46,69 +45,100 @@ class TextClassifier:
 
     def train(self, train_dataloader):
         self.model.train()
-        train_loss, train_acc = 0.0, 0.0
-        count, correct = 0, 0
-        full_true, full_pred = [], []
+        total_train_loss = 0.0
+        total_train_correct = 0
+        total_train_count = 0
+        true_labels, predicted_labels = [], []
 
-        for x, y in train_dataloader:
-            x, y = x.to(DEVICE), y.to(DEVICE)
+        for inputs, labels in train_dataloader:
+            inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
             self.optimizer.zero_grad()
-            output = self.model(x)
-            loss = self.criterion(output, y)
+            outputs = self.model(inputs)
+            loss = self.criterion(outputs, labels)
             loss.backward()
             self.optimizer.step()
-            train_loss += loss.item()
-            correct += (output.argmax(1) == y).float().sum().item()
-            count += len(x)
-            full_true.extend(y.cpu().numpy().tolist())
-            full_pred.extend(output.argmax(1).cpu().numpy().tolist())
 
-        train_loss *= self.batch_size
-        train_loss /= len(train_dataloader.dataset)
-        train_acc = correct / count
+            total_train_loss += loss.item()
+            total_train_correct += (
+                (outputs.argmax(dim=1) == labels).float().sum().item()
+            )
+            total_train_count += len(inputs)
+            true_labels.extend(labels.cpu().numpy().tolist())
+            predicted_labels.extend(outputs.argmax(dim=1).cpu().numpy().tolist())
+
+        avg_train_loss = total_train_loss / len(train_dataloader.dataset)
+        train_accuracy = total_train_correct / total_train_count
         self.scheduler.step()
-        f1 = f1_score(np.array(full_true), np.array(full_pred), average="binary")
-        return train_loss, train_acc, f1
+        train_f1 = f1_score(
+            np.array(true_labels), np.array(predicted_labels), average="binary"
+        )
+        return avg_train_loss, train_accuracy, train_f1
 
     def validate_and_test(self, dataloader):
         self.model.eval()
-        loss, acc = 0.0, 0.0
-        count, correct = 0, 0
-        full_true, full_pred = [], []
+        total_val_loss = 0.0
+        total_val_correct = 0
+        total_val_count = 0
+        true_labels, predicted_labels = [], []
 
-        for x, y in dataloader:
-            x, y = x.to(DEVICE), y.to(DEVICE)
-            output = self.model(x)
-            loss_val = self.criterion(output, y)
-            loss += loss_val.item()
-            correct += (output.argmax(1) == y).float().sum().item()
-            count += len(x)
-            full_true.extend(y.cpu().numpy().tolist())
-            full_pred.extend(output.argmax(1).cpu().numpy().tolist())
+        with torch.no_grad():
+            for inputs, labels in dataloader:
+                inputs, labels = inputs.to(DEVICE), labels.to(DEVICE)
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, labels)
+                total_val_loss += loss.item()
+                total_val_correct += (
+                    (outputs.argmax(dim=1) == labels).float().sum().item()
+                )
+                total_val_count += len(inputs)
+                true_labels.extend(labels.cpu().numpy().tolist())
+                predicted_labels.extend(outputs.argmax(dim=1).cpu().numpy().tolist())
 
-        loss *= self.batch_size
-        loss /= len(dataloader.dataset)
-        acc = correct / count
-        f1 = f1_score(np.array(full_true), np.array(full_pred), average="binary")
-        return loss, acc, f1
+        avg_val_loss = total_val_loss / len(dataloader.dataset)
+        val_accuracy = total_val_correct / total_val_count
+        val_f1 = f1_score(
+            np.array(true_labels), np.array(predicted_labels), average="binary"
+        )
+        return avg_val_loss, val_accuracy, val_f1
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Text Classification Model")
     parser.add_argument(
-        "-l", "--learning-rate", type=float, default=1e-3, help="Learning rate"
+        "-l",
+        "--learning-rate",
+        type=float,
+        default=1e-3,
+        help="Learning rate",
     )
-    parser.add_argument("-e", "--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument(
-        "-m", "--max-length", type=int, default=120, help="Maximum sentence length"
+        "-e",
+        "--epochs",
+        type=int,
+        default=20,
+        help="Number of epochs",
     )
-    parser.add_argument("-b", "--batch-size", type=int, default=50, help="Batch size")
+    parser.add_argument(
+        "-m",
+        "--max-length",
+        type=int,
+        default=64,
+        help="Maximum sentence length",
+    )
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=64,
+        help="Batch size",
+    )
     parser.add_argument(
         "-n",
         "--model-type",
         type=str,
         default="TextCNN",
-        help="Model type (RNN_LSTM, RNN_GRU, TextCNN, MLP)",
+        choices=["RNN_LSTM", "RNN_GRU", "TextCNN", "MLP", "Transformer", "Bert"],
+        help="Model type",
     )
     args = parser.parse_args()
 

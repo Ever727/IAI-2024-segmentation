@@ -11,55 +11,129 @@ word2vec = get_word2vec(word2id=word2id)
 
 
 class CONFIG:
-    update_w2v = True  # 是否在训练中更新w2v
-    vocab_size = len(word2id) + 1  # 词汇量，与word2id中的词汇量一致
-    n_class = 2  # 分类数：分别为pos和neg
-    embedding_dim = 50  # 词向量维度
-    drop_keep_prob = 0.3  # dropout层，参数keep的比例
-    kernel_num = 20  # 卷积层filter的数量
-    kernel_size = [3, 5, 7]  # 卷积核的尺寸
-    pretrained_embed = word2vec  # 预训练的词嵌入模型
-    hidden_size = 256  # 隐藏层神经元数
-    num_layers = 2  # 隐藏层数
-    d_model = 256  # transformer的模型维度
-    nhead = 8  # transformer的头数
-    num_transformer_layers = 8  # transformer的层数
-    dim_feedforward = 1024  # transformer的前馈神经元数
-    dropout = 0.3  # transformer的dropout比例
-    
+    # Whether to update the word2vec model during training
+    update_w2v = True
+
+    # Vocabulary size, consistent with the word2id dictionary
+    vocab_size = len(word2id) + 1
+
+    # Number of classes: pos and neg
+    n_class = 2
+
+    # Word embedding dimension
+    embedding_dim = 50
+
+    # Number of convolutional filters
+    kernel_num = 20
+
+    # Convolutional kernel sizes
+    kernel_size = [3, 5, 7]
+
+    # Pre-trained word embedding model
+    pretrained_embed = word2vec
+
+    # Hidden layer size
+    hidden_size = 256
+
+    # Number of hidden layers
+    num_layers = 2
+
+    # Transformer model dimension
+    d_model = 256
+
+    # Number of attention heads in Transformer
+    nhead = 8
+
+    # Number of Transformer layers
+    num_transformer_layers = 8
+
+    # Transformer feed-forward layer size
+    dim_feedforward = 1024
+
+    # Dropout rate
+    dropout = 0.3
+
+    # Number of hidden layers in BERT model
     num_hidden_layers = 12
+
+    # Number of attention heads in BERT
     num_attention_heads = 8
+
+    # Size of intermediate layer in BERT
     intermediate_size = 384
+
+    # Maximum position embedding length in BERT
     max_position_embeddings = 64
+
+    # Vocabulary size for token type ids in BERT
     type_vocab_size = 2
+
+    # Token ID for padding in BERT
     pad_token_id = 0
 
+    # Layer normalization epsilon in BERT
     layer_norm_eps = 1e-12
-    attention_probs_dropout_prob = 0.1
-    initializer_range = 0.02
-    chunk_size_feed_forward = 0
-    hidden_dropout_prob = 0.1
-    attention_dropout_prob = 0.1
-    max_position_embeddings = 64
-    max_predictions_per_seq = 20
 
-    norm_first = False
+    # Dropout rate for attention probabilities in BERT
+    attention_probs_dropout_prob = 0.1
+
+    # Initialization range for BERT parameters
+    initializer_range = 0.02
+
+    # Chunk size for feed-forward in BERT
+    chunk_size_feed_forward = 0
+
+    # Dropout rate for hidden layers in BERT
+    hidden_dropout_prob = 0.1
+
+    # Dropout rate for attention in BERT
+    attention_dropout_prob = 0.1
+
+    # Maximum sequence length in BERT
     max_seq_length = 64
+
+    # Use gradient checkpointing in BERT
     gradient_checkpointing = False
+
+    # Use fused layer normalization in BERT
     fused_layer_norm = True
+
+    # Label smoothing factor in BERT
     label_smoothing = 0.0
+
+    # Warm-up steps in BERT
     warmup_steps = 0
+
+    # Weight decay in BERT
     weight_decay = 0.01
+
+    # Adam beta1 in BERT
     adam_beta1 = 0.9
+
+    # Adam beta2 in BERT
     adam_beta2 = 0.999
+
+    # Adam epsilon in BERT
     adam_epsilon = 1e-8
-    
+
+    # Whether the model is a decoder in BERT
     is_decoder = False
+
+    # Whether to use cross-attention in BERT
     add_cross_attention = False
+
+    # Whether to tie word embeddings in BERT
     tie_word_embeddings = False
+
+    # Whether to use cache in BERT
     use_cache = True
+
+    # Whether the model is an encoder-decoder in BERT
     is_encoder_decoder = False
+
+    # Activation function in BERT
     hidden_act = "gelu"
+
 
 class TextCNN(nn.Module):
     def __init__(self, config: CONFIG):
@@ -86,7 +160,7 @@ class TextCNN(nn.Module):
         )
 
         # 定义 Dropout 层和全连接层
-        self.dropout = nn.Dropout(config.drop_keep_prob)
+        self.dropout = nn.Dropout(config.dropout)
         self.fc = nn.Sequential(
             self.dropout,
             nn.Linear(len(config.kernel_size) * config.kernel_num, config.n_class),
@@ -263,21 +337,27 @@ class Transformer(nn.Module):
 
         # 添加一个线性层将嵌入投影到所需维度
         self.projection = nn.Linear(config.embedding_dim, config.d_model)
-        
+
         # 定义位置编码
         # self.pos_encoder = PositionalEncoding(config.d_model, config.dropout)
 
         # 定义 Transformer 编码器层
-        self.transformer_encoder_layers = nn.ModuleList([
-            TransformerEncoderLayer(
-                config.d_model,
-                config.nhead,
-                config.dim_feedforward,
-                config.dropout,
-            )
-            for _ in range(config.num_transformer_layers)
-        ])
-        self.transformer_encoder = TransformerEncoder(self.transformer_encoder_layers, config.num_transformer_layers, norm=nn.LayerNorm(config.d_model))
+        self.transformer_encoder_layers = nn.ModuleList(
+            [
+                TransformerEncoderLayer(
+                    config.d_model,
+                    config.nhead,
+                    config.dim_feedforward,
+                    config.dropout,
+                )
+                for _ in range(config.num_transformer_layers)
+            ]
+        )
+        self.transformer_encoder = TransformerEncoder(
+            self.transformer_encoder_layers,
+            config.num_transformer_layers,
+            norm=nn.LayerNorm(config.d_model),
+        )
 
         # 定义全连接层
         self.dropout = nn.Dropout(config.dropout)
@@ -306,7 +386,9 @@ class Transformer(nn.Module):
         # x = self.pos_encoder(x)
 
         # 将投影后的嵌入传入 Transformer 编码器
-        x = x.permute(1, 0, 2)  # (batch, seq_len, embed_dim) -> (seq_len, batch, embed_dim)
+        x = x.permute(
+            1, 0, 2
+        )  # (batch, seq_len, embed_dim) -> (seq_len, batch, embed_dim)
         for layer in self.transformer_encoder_layers:
             x = layer(x)
         x = x[-1, :, :]  # 取最后一个时间步的输出作为文本表示
@@ -384,7 +466,7 @@ class Bert(nn.Module):
             torch.Tensor: 模型的分类结果。
         """
         input_ids = input_ids.long()
-        
+
         # 通过 BERT 词嵌入层
         embedding_output = self.embeddings(input_ids, token_type_ids)
 
@@ -394,7 +476,7 @@ class Bert(nn.Module):
 
         # 取 [CLS] 标记的输出作为文本表示
         pooled_output = sequence_output[:, 0, :]
-        
+
         # 通过 pre_classifier 层
         pooled_output = self.pre_classifier(pooled_output)
 
